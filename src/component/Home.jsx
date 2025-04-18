@@ -128,6 +128,7 @@ function Home() {
         </div>
       </div>
 
+    
       {/* Bottom Navigation Bar - Fixed to bottom regardless of scroll */}
       <div className="fixed bottom-0 left-0 right-0 bg-indigo-300 rounded-t-3xl py-2 md:py-3 lg:py-4 z-30">
         <div className="flex justify-around max-w-xl mx-auto">

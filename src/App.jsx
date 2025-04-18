@@ -4,6 +4,7 @@ import Home from './component/Home'
 import PlayGame from './component/PlayGame';
 import Blog from './component/Blog'
 import Profile from './component/Profile'
+import Login from './component/Login';
 import './App.css'
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
         <Route path="/PlayGame" element={<PlayGame />} />
         <Route path="/blog" element={<Blog />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/login" element={<Login />} />
         {/* Add more routes as needed */}
       </Routes>
     </Router>
