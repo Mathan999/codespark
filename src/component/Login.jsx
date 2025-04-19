@@ -1,391 +1,79 @@
 import React, { useState } from 'react';
-import { ArrowLeft, User, Phone, ShieldCheck, LogIn, SendHorizontal } from 'lucide-react';
+import { ArrowLeft, User, Phone, LogIn } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { initializeApp } from 'firebase/app';
-import { getAuth, RecaptchaVerifier, signInWithPhoneNumber } from 'firebase/auth';
-import axios from 'axios'; // Add axios for API calls
-
-// Firebase configuration
-const firebaseConfig = {
-    apiKey: "AIzaSyB4jY_8Yq-lNjpckKsnyASL1di8w3UtmGk",
-    authDomain: "chatting-6c30c.firebaseapp.com",
-    projectId: "chatting-6c30c",
-    storageBucket: "chatting-6c30c.firebasestorage.app",
-    messagingSenderId: "990085182879",
-    appId: "1:990085182879:web:9c081f1cae8aca68bff9aa",
-    measurementId: "G-9JF8TK0WM3"
-};
-
-// Initialize Firebase app
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-
-// Feature flag to control authentication method
-// We're setting up three methods now
-const AUTH_METHOD = "SMS_API"; // Options: "FIREBASE", "SMS_API", "MOCK"
-
-// SMS API configuration
-const SMS_API_CONFIG = {
-    apiKey: "CKqOje6mDEP9RM2daxQbvprnuilSL7t5TzVcsXYUh1kWwoNFyJPjwDSBKmoMEtiIY6vZz9Qeb3JlV1xU", // Replace with your SMS gateway API key
-    url: "https://www.fast2sms.com/dev/bulkV2", // Replace with your SMS gateway URL
-};
+import { api } from './api';
 
 function Login() {
-  const [step, setStep] = useState(1); // 1: Username & Phone, 2: OTP Verification
   const [formData, setFormData] = useState({
-    username: '',
-    phoneNumber: '',
-    otp: ''
+    name: '', // Field matches database column 'name'
+    phone: '' // Field matches database column 'phone'
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [confirmationResult, setConfirmationResult] = useState(null);
+  const [successMessage, setSuccessMessage] = useState('');
   
   const navigate = useNavigate();
-
-  // Helper function to format phone number with +91
-  const formatPhoneNumber = (number) => {
-    // Remove all non-digit characters
-    const digitsOnly = number.replace(/\D/g, '');
-    
-    // If the number already starts with country code, return as is
-    if (digitsOnly.startsWith('91') && digitsOnly.length > 10) {
-      return '+' + digitsOnly;
-    }
-    
-    // Otherwise, add +91 prefix to numbers without country code
-    // For 10-digit numbers
-    if (digitsOnly.length === 10) {
-      return '+91' + digitsOnly;
-    }
-    
-    // Return with + prefix if it's a valid number
-    return '+' + digitsOnly;
-  };
-
-  // Helper function to get raw phone number without +91 for SMS API
-  const getRawPhoneNumber = (formattedNumber) => {
-    // Remove '+91' prefix if present
-    return formattedNumber.replace(/^\+91/, '');
-  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // Real SMS API implementation for Fast2SMS
-  const sendRealSMS = async (phoneNumber, otp) => {
-    try {
-      // Prepare the raw phone number without +91 for the SMS API
-      const rawPhoneNumber = getRawPhoneNumber(phoneNumber);
-      
-      // Create the message content
-      const message = `Your YnotGames verification code is: ${otp}. This code will expire in 10 minutes.`;
-      
-      // Make API call to Fast2SMS
-      const response = await axios({
-        method: 'POST',
-        url: SMS_API_CONFIG.url,
-        headers: {
-          'authorization': SMS_API_CONFIG.apiKey,
-          'Content-Type': 'application/json'
-        },
-        data: {
-          route: 'q', // Use 'q' for quick SMS or 'v' for promotional
-          numbers: rawPhoneNumber,
-          message: message,
-          language: 'english',
-          flash: 0
-        }
-      });
-      
-      console.log("SMS sent successfully:", response.data);
-      return true;
-    } catch (error) {
-      console.error("Failed to send SMS:", error);
-      throw new Error("Failed to send SMS. Please try again.");
-    }
-  };
-
-  // Mock authentication implementation (for development)
-  const sendMockOTP = async (formattedPhone) => {
-    // Generate a random 6-digit OTP
-    const generatedOTP = Math.floor(100000 + Math.random() * 900000).toString();
-    
-    // Save OTP in localStorage (only for development)
-    localStorage.setItem('tempOTP', generatedOTP);
-    localStorage.setItem('tempPhone', formattedPhone);
-    
-    console.log("Development OTP for", formattedPhone, ":", generatedOTP); // Only for testing
-    
-    // Simulate network delay
-    return new Promise(resolve => {
-      setTimeout(() => {
-        resolve(generatedOTP);
-      }, 1500);
-    });
-  };
-
-  const verifyMockOTP = async () => {
-    const storedOTP = localStorage.getItem('tempOTP');
-    const storedPhone = localStorage.getItem('tempPhone');
-    
-    // Check if the entered OTP matches and phone number matches
-    if (formData.otp === storedOTP && formData.phoneNumber === storedPhone) {
-      // Store user data in localStorage
-      localStorage.setItem('username', formData.username);
-      localStorage.setItem('phoneNumber', formData.phoneNumber);
-      localStorage.setItem('isLoggedIn', 'true');
-      localStorage.setItem('userId', 'user_' + Date.now()); // Generate a fake user ID
-      
-      // Clean up the temporary OTP
-      localStorage.removeItem('tempOTP');
-      localStorage.removeItem('tempPhone');
-      
-      // Return success
-      return true;
-    } else {
-      // Return failure
-      return false;
-    }
-  };
-
-  // Setup invisible reCAPTCHA for Firebase auth
-  const setupRecaptcha = () => {
-    if (window.recaptchaVerifier) {
-      window.recaptchaVerifier.clear();
-    }
-    
-    window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-      'size': 'invisible',
-      'callback': () => {
-        // reCAPTCHA solved, allow signInWithPhoneNumber.
-      },
-      'expired-callback': () => {
-        // Reset reCAPTCHA
-        if (window.recaptchaVerifier) {
-          window.recaptchaVerifier.clear();
-        }
-      }
-    });
-  };
-
-  // Handle sending OTP
-  const handleSendOTP = async (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     
-    // Validate inputs
-    if (!formData.username.trim()) {
-      setError('Username is required');
+    // Form validation
+    if (!formData.name.trim()) {
+      setError('Name is required');
       return;
     }
     
-    if (!formData.phoneNumber.trim()) {
+    if (!formData.phone.trim()) {
       setError('Phone number is required');
       return;
     }
     
-    // Format phone number with +91
-    const formattedPhone = formatPhoneNumber(formData.phoneNumber);
-    
-    // Reset error state
-    setError('');
-    setIsLoading(true);
-    
-    try {
-      let generatedOTP = null;
-      
-      // Choose authentication method
-      switch (AUTH_METHOD) {
-        case "FIREBASE": {
-          // Try Firebase Phone Authentication
-          setupRecaptcha();
-          
-          // Send OTP via Firebase
-          const appVerifier = window.recaptchaVerifier;
-          const confirmation = await signInWithPhoneNumber(auth, formattedPhone, appVerifier);
-          
-          // Store the confirmation result
-          setConfirmationResult(confirmation);
-          break;
-        }
-          
-        case "SMS_API": {
-          // Generate OTP
-          generatedOTP = Math.floor(100000 + Math.random() * 900000).toString();
-          
-          // Send SMS via API
-          await sendRealSMS(formattedPhone, generatedOTP);
-          
-          // Store OTP securely for verification
-          localStorage.setItem('tempOTP', generatedOTP);
-          localStorage.setItem('tempPhone', formattedPhone);
-          break;
-        }
-          
-        case "MOCK":
-        default:
-          // Use the mock authentication
-          generatedOTP = await sendMockOTP(formattedPhone);
-          break;
-      }
-      
-      // Update the phone number with the formatted version
-      setFormData(prev => ({ ...prev, phoneNumber: formattedPhone }));
-      
-      // Move to OTP verification step
-      setStep(2);
-      
-    } catch (error) {
-      console.error('Error sending OTP:', error);
-      
-      // If primary method fails, fall back to mock auth for development
-      try {
-        console.log('Falling back to mock authentication');
-        await sendMockOTP(formattedPhone);
-        
-        // Update the phone number with the formatted version
-        setFormData(prev => ({ ...prev, phoneNumber: formattedPhone }));
-        
-        // Move to OTP verification step
-        setStep(2);
-      // eslint-disable-next-line no-unused-vars
-      } catch (error) {
-        // Using error instead of mockError to avoid unused variable warning
-        setError('Failed to send verification code. Please try again.');
-      }
-      
-      // Reset recaptcha if there's an error
-      if (window.recaptchaVerifier) {
-        window.recaptchaVerifier.clear();
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    
-    // Validate OTP
-    if (!formData.otp.trim()) {
-      setError('OTP is required');
+    if (!/^\d{10}$/.test(formData.phone)) {
+      setError('Please enter a valid 10-digit phone number');
       return;
     }
     
-    // Reset error state
     setError('');
+    setSuccessMessage('');
     setIsLoading(true);
     
     try {
-      let isSuccess = false;
+      console.log('Attempting login with:', formData.name, formData.phone);
       
-      // Verify based on authentication method
-      switch (AUTH_METHOD) {
-        case "FIREBASE":
-          if (confirmationResult) {
-            try {
-              const result = await confirmationResult.confirm(formData.otp);
-              
-              // User is signed in
-              const user = result.user;
-              
-              // Store user data in localStorage for session management
-              localStorage.setItem('username', formData.username);
-              localStorage.setItem('phoneNumber', formData.phoneNumber);
-              localStorage.setItem('isLoggedIn', 'true');
-              localStorage.setItem('userId', user.uid);
-              
-              isSuccess = true;
-            } catch (firebaseError) {
-              console.error('Firebase verification error:', firebaseError);
-              throw new Error('Invalid OTP. Please try again.');
-            }
-          }
-          break;
-          
-        case "SMS_API":
-        case "MOCK":
-        default:
-          // Use mock verification (same logic works for stored OTPs from SMS API)
-          isSuccess = await verifyMockOTP();
-          if (!isSuccess) {
-            throw new Error('Invalid OTP. Please try again.');
-          }
-          break;
-      }
+      // Call the API login function with the correct field names that match the database
+      const result = await api.login(formData.name, formData.phone);
       
-      if (isSuccess) {
-        // Redirect to profile page
-        navigate('/profile');
+      if (result.success) {
+        // Store user data in sessionStorage
+        sessionStorage.setItem('userId', result.userId);
+        sessionStorage.setItem('isLoggedIn', 'true');
+        sessionStorage.setItem('username', formData.name);
+        
+        // Show success message if account was newly created
+        if (result.message && result.message.includes('created')) {
+          setSuccessMessage('Account created successfully! Redirecting to your profile...');
+          setTimeout(() => {
+            navigate('/profile');
+          }, 2000);
+        } else {
+          // Redirect to profile page immediately for existing users
+          navigate('/profile');
+        }
       } else {
-        setError('Wrong verification code. Please try again.');
+        setError(result.message || 'Login failed. Please try again.');
       }
-      
     } catch (error) {
-      console.error('Error verifying OTP:', error);
-      setError(error.message || 'Failed to verify code. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const resendOTP = async () => {
-    setIsLoading(true);
-    
-    try {
-      // Format phone number with +91
-      const formattedPhone = formData.phoneNumber;
-      let generatedOTP = null;
-      
-      // Choose authentication method for resending
-      switch (AUTH_METHOD) {
-        case "FIREBASE": {
-          // Try Firebase
-          setupRecaptcha();
-          
-          // Resend OTP
-          const appVerifier = window.recaptchaVerifier;
-          const confirmation = await signInWithPhoneNumber(auth, formattedPhone, appVerifier);
-          
-          // Update confirmation result
-          setConfirmationResult(confirmation);
-          break;
-        }
-          
-        case "SMS_API": {
-          // Generate new OTP
-          generatedOTP = Math.floor(100000 + Math.random() * 900000).toString();
-          
-          // Send SMS via API
-          await sendRealSMS(formattedPhone, generatedOTP);
-          
-          // Store OTP securely for verification
-          localStorage.setItem('tempOTP', generatedOTP);
-          localStorage.setItem('tempPhone', formattedPhone);
-          break;
-        }
-          
-        case "MOCK":
-        default:
-          // Use mock
-          generatedOTP = await sendMockOTP(formattedPhone);
-          break;
-      }
-      
-      setError('');
-    } catch (error) {
-      console.error('Error resending OTP:', error);
-      
-      // If primary method fails, fall back to mock auth for development
-      try {
-        console.log('Falling back to mock authentication for resend');
-        await sendMockOTP(formData.phoneNumber);
-      // eslint-disable-next-line no-unused-vars
-      } catch (error) {
-        // Using error instead of mockError to avoid unused variable warning
-        setError('Failed to resend code. Please try again.');
+      console.error('Login error details:', error);
+      // More user-friendly error message
+      if (error.message && (error.message.includes('NetworkError') || error.message.includes('Failed to fetch'))) {
+        setError('Cannot connect to the server. Please check your internet connection or try again later.');
+      } else {
+        setError(error.message || 'Login failed. Please check your credentials and try again.');
       }
     } finally {
       setIsLoading(false);
@@ -458,124 +146,75 @@ function Login() {
                 </div>
               )}
               
-              {step === 1 ? (
-                <form onSubmit={handleSendOTP}>
-                  <h2 className="text-white text-2xl font-bold mb-6">Welcome Back</h2>
-                  
-                  {/* Username Field */}
-                  <div className="mb-4">
-                    <div className="flex items-center border-b border-indigo-800 py-2">
-                      <User className="h-5 w-5 text-teal-500 mr-3" />
-                      <input
-                        type="text"
-                        name="username"
-                        value={formData.username}
-                        onChange={handleChange}
-                        placeholder="Username"
-                        className="w-full bg-transparent text-white focus:outline-none"
-                      />
-                    </div>
-                  </div>
-                  
-                  {/* Phone Number Field */}
-                  <div className="mb-6">
-                    <div className="flex items-center border-b border-indigo-800 py-2">
-                      <Phone className="h-5 w-5 text-teal-500 mr-3" />
-                      <div className="flex items-center w-full">
-                        <span className="text-gray-400 mr-1">+91</span>
-                        <input
-                          type="tel"
-                          name="phoneNumber"
-                          value={formData.phoneNumber.replace(/^\+91/, '')}
-                          onChange={handleChange}
-                          placeholder="Phone Number"
-                          className="w-full bg-transparent text-white focus:outline-none"
-                          maxLength={10}
-                        />
-                      </div>
-                    </div>
-                    <p className="text-gray-400 text-xs mt-1">Enter your 10-digit phone number</p>
-                  </div>
-                  
-                  {/* Invisible reCAPTCHA container */}
-                  <div id="recaptcha-container"></div>
-                  
-                  {/* Send OTP Button */}
-                  <button 
-                    type="submit"
-                    disabled={isLoading}
-                    className="w-full bg-yellow-500 text-indigo-950 rounded-lg py-3 flex items-center justify-center font-bold transition-all hover:bg-yellow-400 disabled:opacity-50"
-                  >
-                    {isLoading ? (
-                      "Sending..."
-                    ) : (
-                      <>
-                        <SendHorizontal className="h-5 w-5 mr-2" />
-                        Send OTP
-                      </>
-                    )}
-                  </button>
-                </form>
-              ) : (
-                <form onSubmit={handleLogin}>
-                  <h2 className="text-white text-2xl font-bold mb-6">OTP Verification</h2>
-                  
-                  <div className="mb-2 text-gray-300 text-sm">
-                    We've sent a verification code to {formData.phoneNumber}
-                  </div>
-                  
-                  {/* OTP Input Field */}
-                  <div className="mb-6">
-                    <div className="flex items-center border-b border-indigo-800 py-2">
-                      <ShieldCheck className="h-5 w-5 text-teal-500 mr-3" />
-                      <input
-                        type="text"
-                        name="otp"
-                        value={formData.otp}
-                        onChange={handleChange}
-                        placeholder="Enter OTP"
-                        className="w-full bg-transparent text-white focus:outline-none"
-                        maxLength={6}
-                      />
-                    </div>
-                  </div>
-                  
-                  {/* Login Button */}
-                  <button 
-                    type="submit"
-                    disabled={isLoading}
-                    className="w-full bg-teal-500 text-white rounded-lg py-3 flex items-center justify-center font-bold transition-all hover:bg-teal-600 disabled:opacity-50"
-                  >
-                    {isLoading ? (
-                      "Verifying..."
-                    ) : (
-                      <>
-                        <LogIn className="h-5 w-5 mr-2" />
-                        Login
-                      </>
-                    )}
-                  </button>
-                  
-                  {/* Resend OTP Button */}
-                  <button 
-                    type="button"
-                    onClick={resendOTP}
-                    disabled={isLoading}
-                    className="w-full bg-transparent text-yellow-400 hover:text-yellow-300 py-2 mt-2 font-medium"
-                  >
-                    Resend OTP
-                  </button>
-                  
-                  {/* Back Button */}
-                  <button 
-                    type="button"
-                    onClick={() => setStep(1)}
-                    className="w-full bg-transparent text-gray-300 py-2 mt-2 font-medium"
-                  >
-                    Back to Phone Entry
-                  </button>
-                </form>
+              {/* Success message if any */}
+              {successMessage && (
+                <div className="bg-green-500 bg-opacity-20 border border-green-500 text-green-300 px-4 py-2 rounded-lg mb-4">
+                  {successMessage}
+                </div>
               )}
+              
+              <form onSubmit={handleLogin}>
+                <h2 className="text-white text-2xl font-bold mb-6">Welcome Back</h2>
+                
+                {/* Name Field */}
+                <div className="mb-4">
+                  <div className="flex items-center border-b border-indigo-800 py-2">
+                    <User className="h-5 w-5 text-teal-500 mr-3" />
+                    <input
+                      type="text"
+                      name="name"
+                      value={formData.name}
+                      onChange={handleChange}
+                      placeholder="Name"
+                      className="w-full bg-transparent text-white focus:outline-none"
+                    />
+                  </div>
+                </div>
+                
+                {/* Phone Number Field */}
+                <div className="mb-6">
+                  <div className="flex items-center border-b border-indigo-800 py-2">
+                    <Phone className="h-5 w-5 text-teal-500 mr-3" />
+                    <div className="flex items-center w-full">
+                      <span className="text-gray-400 mr-1">+91</span>
+                      <input
+                        type="tel"
+                        name="phone"
+                        value={formData.phone}
+                        onChange={handleChange}
+                        placeholder="Phone Number"
+                        className="w-full bg-transparent text-white focus:outline-none"
+                        maxLength={10}
+                        pattern="\d{10}"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-gray-400 text-xs mt-1">Enter your 10-digit phone number</p>
+                </div>
+                
+                {/* Login Button */}
+                <button 
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full bg-yellow-500 text-indigo-950 rounded-lg py-3 flex items-center justify-center font-bold transition-all hover:bg-yellow-400 disabled:opacity-50"
+                >
+                  {isLoading ? (
+                    "Logging in..."
+                  ) : (
+                    <>
+                      <LogIn className="h-5 w-5 mr-2" />
+                      Login / Sign Up
+                    </>
+                  )}
+                </button>
+                
+                {/* Create Account Link */}
+                <div className="mt-4 text-center">
+                  <p className="text-gray-400">
+                    First time? Just enter your details and we'll create an account for you.
+                  </p>
+                </div>
+              </form>
             </div>
           </div>
         </div>
